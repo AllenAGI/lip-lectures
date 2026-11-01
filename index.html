@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>具身智能 · 讲座资料库</title>
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><i>LIP</i><span>讲座资料库</span></div>
+  <div class="search">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+    <input id="q" placeholder="搜索标题 / 幻灯片 / 笔记：π0、世界模型、sim2real…" autocomplete="off">
+  </div>
+  <div class="meta" id="meta"></div>
+</header>
+
+<section class="hero">
+  <h1>具身智能 <em>讲座资料库</em></h1>
+  <p id="sub"></p>
+</section>
+
+<nav class="chips" id="chips"></nav>
+<main class="grid" id="grid"></main>
+<section class="results" id="results" hidden></section>
+
+<script src="data.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>

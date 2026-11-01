@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>讲座</title>
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body class="lecture">
+<div class="ltop">
+  <a class="back" href="index.html">← 返回</a>
+  <div class="ttl" id="ttl"></div>
+  <div class="pager">
+    <button id="prev" title="上一页">←</button>
+    <div class="cnt" id="cnt">1 / 1</div>
+    <button id="next" title="下一页">→</button>
+  </div>
+  <div class="nav">
+    <button id="prevL">上一期</button>
+    <button id="nextL">下一期</button>
+  </div>
+</div>
+<div class="lmain">
+  <div class="stagewrap"><iframe id="deck" src="" title="幻灯片"></iframe></div>
+  <aside class="sidebar">
+    <div class="tabs">
+      <button data-tab="ol" class="on">目录</button>
+      <button data-tab="notes">笔记</button>
+      <button data-tab="about">关于</button>
+    </div>
+    <div class="panel" id="panel-ol"></div>
+    <div class="panel" id="panel-notes" hidden></div>
+    <div class="panel" id="panel-about" hidden></div>
+    <div class="tip">点一下幻灯片，再用 ← → 翻页；目录可直接跳页</div>
+  </aside>
+</div>
+<script src="data.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>
