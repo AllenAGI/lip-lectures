@@ -159,6 +159,19 @@
     });
   }
 
+  function renderVideo(v) {
+    if (!v) {
+      return '<div class="about">这一期还没有关联视频。<br>把 B 站链接（或 BV 号）补进仓库根目录的 <code>videos.json</code>，这里就会出现播放器；同步会保留这个文件，不会被覆盖。</div>';
+    }
+    if (v.bvid) {
+      return '<div class="video-wrap"><iframe src="https://player.bilibili.com/player.html?bvid=' + encodeURIComponent(v.bvid) + '&page=1&high_quality=1&danmaku=0" scrolling="no" frameborder="0" allowfullscreen></iframe></div>' +
+        (v.title ? '<div class="video-title">' + esc(v.title) + "</div>" : "") +
+        (v.url ? '<a class="video-link" href="' + esc(v.url) + '" target="_blank" rel="noreferrer">在 B 站打开 ↗</a>' : "");
+    }
+    return '<div class="video-card"><div class="video-title">' + esc(v.title || "视频") + "</div>" +
+      (v.url ? '<a class="video-link" href="' + esc(v.url) + '" target="_blank" rel="noreferrer">打开视频 ↗</a>' : "") + "</div>";
+  }
+
   /* ---------------- lecture ---------------- */
   if (document.getElementById("deck")) {
     var params = new URLSearchParams(location.search);
@@ -206,12 +219,16 @@
       (L.readme ? '<div style="margin-top:16px;padding-top:14px;border-top:1px solid #2b2c30">' + mdToHtml(L.readme) + "</div>" : "") +
       "</div>";
 
+    var videoPanel = document.getElementById("panel-video");
+    videoPanel.innerHTML = renderVideo(L.video);
+
     document.querySelectorAll(".tabs button").forEach(function (b) {
       b.addEventListener("click", function () {
         document.querySelectorAll(".tabs button").forEach(function (x) { x.classList.toggle("on", x === b); });
         var t = b.getAttribute("data-tab");
         olPanel.hidden = t !== "ol";
         notesPanel.hidden = t !== "notes";
+        videoPanel.hidden = t !== "video";
         aboutPanel.hidden = t !== "about";
       });
     });
