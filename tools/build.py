@@ -69,6 +69,25 @@ def strip_tags(s):
     return re.sub(r"\s+", " ", s).strip()
 
 
+def topics(title):
+    out = []
+    if re.search(r"VLA|RT-2|OpenVLA|π0|pi0|πstar", title, re.I):
+        out.append("VLA")
+    if re.search(r"世界模型|World\s*Model|WAM|World Action|JEPA|Dreamer", title, re.I):
+        out.append("世界模型")
+    if re.search(r"强化学习|PPO|RECAP|RL", title, re.I):
+        out.append("强化学习")
+    if re.search(r"VLN|导航", title, re.I):
+        out.append("导航")
+    if re.search(r"机器人|Franka|ALOHA|Spot|宇树|Atlas|MuJoCo|LIBERO|人形", title, re.I):
+        out.append("本体与仿真")
+    if re.search(r"数据|DROID|OXE|AgiBot", title, re.I):
+        out.append("数据")
+    if re.search(r"视频|Flow\s*Matching|AdaLN|生成", title, re.I):
+        out.append("生成模型")
+    return out
+
+
 def parse_deck(raw):
     sections = re.findall(r"<section\b[^>]*class=\"slide[^\"]*\"[\s\S]*?</section>", raw)
     slides = []
@@ -138,9 +157,39 @@ def main():
         })
         print("  ", lid, len(lectures[-1]["slides"]), "slides,", len(notes), "notes")
 
-    payload = {"lectures": lectures}
-    with open(os.path.join(ROOT, "data.js"), "w", encoding="utf8") as f:
-        f.write("window.LIP_DATA = " + json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + ";\n")
+    DATA_DIR = os.path.join(ROOT, "data")
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+    catalog = []
+    search = []
+    for l in lectures:
+        catalog.append({
+            "id": l["id"],
+            "ep": l["ep"],
+            "title": l["title"],
+            "dir": l["dir"],
+            "slides": len(l["slides"]),
+            "notes": len(l["notes"]),
+            "tags": topics(l["title"]),
+            "video": bool(l["video"]),
+        })
+        for s in l["slides"]:
+            search.append({"i": l["id"], "n": s["n"], "t": s["t"], "x": s["x"]})
+        with open(os.path.join(DATA_DIR, "lecture-%s.js" % l["id"]), "w", encoding="utf8") as f:
+            f.write("window.LIP_LECTURE = " + json.dumps(l, ensure_ascii=False, separators=(",", ":")) + ";\n")
+
+    with open(os.path.join(DATA_DIR, "catalog.js"), "w", encoding="utf8") as f:
+        f.write("window.LIP_CATALOG = " + json.dumps(catalog, ensure_ascii=False, separators=(",", ":")) + ";\n")
+    with open(os.path.join(DATA_DIR, "search.js"), "w", encoding="utf8") as f:
+        f.write("window.LIP_SEARCH = " + json.dumps(search, ensure_ascii=False, separators=(",", ":")) + ";\n")
+
+    keep_js = {l["id"] + ".js" for l in lectures}
+    for name in os.listdir(DATA_DIR):
+        if name.startswith("lecture-") and name not in keep_js:
+            os.remove(os.path.join(DATA_DIR, name))
+    legacy = os.path.join(ROOT, "data.js")
+    if os.path.exists(legacy):
+        os.remove(legacy)
 
     keep = {l["id"] + ".html" for l in lectures}
     for name in os.listdir(DECKS):

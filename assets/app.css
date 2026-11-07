@@ -181,3 +181,7 @@ body.lecture { overflow: hidden; height: 100vh; display: flex; flex-direction: c
 .video-link { display: inline-block; color: #7db8f5; font-size: 12.5px; border: 1px solid #2b2c30; border-radius: 8px; padding: 5px 10px; }
 .video-link:hover { border-color: #55565c; color: #fff; }
 .video-card { border: 1px solid #2b2c30; border-radius: 10px; padding: 12px; }
+
+/* loading + play badge */
+.loading { grid-column: 1 / -1; padding: 60px 0; text-align: center; color: var(--muted); font-size: 14px; }
+.card .play { margin-left: auto; font-size: 11px; color: #fff; background: var(--blue); border-radius: 999px; padding: 1px 7px; }

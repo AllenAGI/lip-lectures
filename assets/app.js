@@ -1,5 +1,5 @@
 (function () {
-  var DATA = (window.LIP_DATA || { lectures: [] }).lectures;
+  var CAT = window.LIP_CATALOG || [];
   var esc = function (s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
@@ -12,18 +12,6 @@
     try { return t.replace(new RegExp(rxEsc(esc(q)), "gi"), function (m) { return "<mark>" + m + "</mark>"; }); }
     catch (e) { return t; }
   };
-
-  function topics(t) {
-    var out = [];
-    if (/VLA|RT-2|OpenVLA|π0|pi0|πstar/i.test(t)) out.push("VLA");
-    if (/世界模型|World\s*Model|WAM|World Action/i.test(t)) out.push("世界模型");
-    if (/强化学习|PPO|RECAP|RL/i.test(t)) out.push("强化学习");
-    if (/VLN|导航/i.test(t)) out.push("导航");
-    if (/机器人|Franka|ALOHA|Spot|宇树|Atlas|MuJoCo|LIBERO|人形/i.test(t)) out.push("本体与仿真");
-    if (/数据|DROID|OXE|AgiBot/i.test(t)) out.push("数据");
-    if (/视频|Flow\s*Matching|AdaLN|生成/i.test(t)) out.push("生成模型");
-    return out;
-  }
 
   function mdToHtml(md) {
     var s = esc(md);
@@ -53,14 +41,14 @@
     var q = document.getElementById("q");
     var meta = document.getElementById("meta");
     var sub = document.getElementById("sub");
-    var totalSlides = DATA.reduce(function (a, l) { return a + l.slides.length; }, 0);
-    var totalNotes = DATA.reduce(function (a, l) { return a + l.notes.length; }, 0);
-    meta.textContent = DATA.length + " 期 · " + totalSlides + " 页 · " + totalNotes + " 篇笔记";
-    sub.textContent = DATA.length + " 期讲座、" + totalSlides + " 页幻灯片、" + totalNotes + " 篇调研笔记。全部在页面里直接翻，不跳转 GitHub。";
+    var totalSlides = CAT.reduce(function (a, l) { return a + l.slides; }, 0);
+    var totalNotes = CAT.reduce(function (a, l) { return a + l.notes; }, 0);
+    meta.textContent = CAT.length + " 期 · " + totalSlides + " 页 · " + totalNotes + " 篇笔记";
+    sub.textContent = CAT.length + " 期讲座、" + totalSlides + " 页幻灯片、" + totalNotes + " 篇调研笔记。全部在页面里直接翻，不跳转 GitHub；全文搜索在第一次输入时载入索引。";
 
     var filter = "全部";
     var topicCount = {};
-    DATA.forEach(function (l) { topics(l.title).forEach(function (t) { topicCount[t] = (topicCount[t] || 0) + 1; }); });
+    CAT.forEach(function (l) { (l.tags || []).forEach(function (t) { topicCount[t] = (topicCount[t] || 0) + 1; }); });
     var topicList = ["全部"].concat(Object.keys(topicCount).sort(function (a, b) { return topicCount[b] - topicCount[a]; }));
     chips.innerHTML = topicList.map(function (t) {
       return '<button class="chip' + (t === filter ? " on" : "") + '" data-t="' + esc(t) + '">' + esc(t) + "</button>";
@@ -74,37 +62,48 @@
     });
 
     function card(l) {
-      var tp = topics(l.title).slice(0, 3);
+      var tp = (l.tags || []).slice(0, 3);
       return '<a class="card" href="lecture.html?id=' + encodeURIComponent(l.id) + '">' +
         '<div class="row"><span class="no">' + esc(l.id) + "</span>" +
-        (l.ep ? '<span class="ep">' + esc(l.ep) + "</span>" : "") + "</div>" +
+        (l.ep ? '<span class="ep">' + esc(l.ep) + "</span>" : "") +
+        (l.video ? '<span class="play" title="有配套视频">▶</span>' : "") + "</div>" +
         "<h3>" + esc(l.title) + "</h3>" +
         (tp.length ? '<div class="tags">' + tp.map(function (t) { return "<span>" + esc(t) + "</span>"; }).join("") + "</div>" : "") +
-        '<div class="stats"><span><b>' + l.slides.length + "</b> 页幻灯片</span><span><b>" + l.notes.length + "</b> 篇笔记</span></div>" +
+        '<div class="stats"><span><b>' + l.slides + "</b> 页幻灯片</span><span><b>" + l.notes + "</b> 篇笔记</span></div>" +
         "</a>";
     }
 
     function render() {
-      var list = DATA.filter(function (l) { return filter === "全部" || topics(l.title).indexOf(filter) >= 0; });
-      grid.innerHTML = list.map(card).join("");
+      var list = CAT.filter(function (l) { return filter === "全部" || (l.tags || []).indexOf(filter) >= 0; });
+      grid.innerHTML = list.map(card).join("") || '<div class="loading">没有匹配的讲座</div>';
       results.hidden = true;
       grid.hidden = false;
     }
     render();
+
     var preset = new URLSearchParams(location.search).get("q");
     if (preset) { q.value = preset; run(); }
 
-    /* search */
-    var index = null;
-    function buildIndex() {
-      if (index) return index;
-      index = [];
-      DATA.forEach(function (l) {
-        l.slides.forEach(function (s) { index.push({ kind: "slide", l: l, n: s.n, t: s.t, x: s.x }); });
-        l.notes.forEach(function (nt) { index.push({ kind: "note", l: l, n: nt.name, t: nt.name, x: nt.text }); });
-      });
-      return index;
+    /* search index loaded on demand */
+    var searchState = 0; // 0 idle, 1 loading, 2 ready
+    var waiting = null;
+    function ensureSearch(cb) {
+      if (window.LIP_SEARCH) { searchState = 2; return cb(); }
+      if (searchState === 1) { waiting = cb; return; }
+      searchState = 1;
+      waiting = cb;
+      results.hidden = false;
+      grid.hidden = true;
+      results.innerHTML = '<div class="loading">正在载入全文索引（约 450 KB，首次会慢几秒）…</div>';
+      var s = document.createElement("script");
+      s.src = "data/search.js";
+      s.onload = function () { searchState = 2; var f = waiting; waiting = null; if (f) f(); };
+      s.onerror = function () {
+        results.innerHTML = '<div class="loading">索引加载失败，检查网络后刷新重试。</div>';
+      };
+      document.body.appendChild(s);
     }
+
     function snippet(text, query) {
       var i = text.toLowerCase().indexOf(query.toLowerCase());
       if (i < 0) return text.slice(0, 90);
@@ -112,133 +111,94 @@
       return (a > 0 ? "…" : "") + text.slice(a, b) + (b < text.length ? "…" : "");
     }
     var timer = null;
-    q.addEventListener("input", function () { clearTimeout(timer); timer = setTimeout(run, 140); });
+    q.addEventListener("input", function () { clearTimeout(timer); timer = setTimeout(run, 160); });
     q.addEventListener("keydown", function (e) { if (e.key === "Escape") { q.value = ""; run(); } });
 
     function run() {
       var query = q.value.trim();
       if (!query) { render(); return; }
-      var idx = buildIndex();
+      ensureSearch(function () { doSearch(query); });
+    }
+
+    function doSearch(query) {
       var ql = query.toLowerCase();
-      var hits = idx.filter(function (r) {
+      var hits = (window.LIP_SEARCH || []).filter(function (r) {
         return (r.t && r.t.toLowerCase().indexOf(ql) >= 0) || (r.x && r.x.toLowerCase().indexOf(ql) >= 0);
       });
+      var byId = {};
+      CAT.forEach(function (l) { byId[l.id] = l; });
       grid.hidden = true;
       results.hidden = false;
       if (!hits.length) {
         results.innerHTML = '<h2>没有找到「' + esc(query) + '」</h2><div class="empty">试试更短的词，比如「π0」「世界模型」「仿真」。</div>';
         return;
       }
-      var slides = hits.filter(function (h) { return h.kind === "slide"; });
-      var notes = hits.filter(function (h) { return h.kind === "note"; });
-      var html = "";
-      if (slides.length) {
-        html += "<h2>幻灯片 · " + slides.length + " 条</h2>";
-        html += slides.slice(0, 120).map(function (h) {
-          return '<div class="res" data-id="' + esc(h.l.id) + '" data-s="' + h.n + '">' +
-            '<div class="where">' + esc(h.l.id) + " · " + esc(h.l.title) + "<br><b>第 " + h.n + " 页</b></div>" +
-            '<div class="what"><span class="t">' + hl(h.t, query) + "</span>　" + hl(snippet(h.x, query), query) + "</div></div>";
-        }).join("");
-      }
-      if (notes.length) {
-        html += "<h2>笔记 · " + notes.length + " 篇</h2>";
-        html += notes.slice(0, 60).map(function (h) {
-          return '<div class="res" data-id="' + esc(h.l.id) + '" data-note="' + esc(h.n) + '">' +
-            '<div class="where">' + esc(h.l.id) + " · " + esc(h.l.title) + "<br><b>笔记</b></div>" +
-            '<div class="what"><span class="t">' + hl(h.t, query) + "</span>　" + hl(snippet(h.x, query), query) + "</div></div>";
-        }).join("");
-      }
+      var html = "<h2>幻灯片 · " + hits.length + " 条</h2>";
+      html += hits.slice(0, 120).map(function (h) {
+        var L = byId[h.i] || {};
+        return '<div class="res" data-id="' + esc(h.i) + '" data-s="' + h.n + '">' +
+          '<div class="where">' + esc(h.i) + " · " + esc(L.title || "") + "<br><b>第 " + h.n + " 页</b></div>" +
+          '<div class="what"><span class="t">' + hl(h.t, query) + "</span>　" + hl(snippet(h.x, query), query) + "</div></div>";
+      }).join("");
       results.innerHTML = html;
     }
+
     results.addEventListener("click", function (e) {
       var r = e.target.closest(".res");
       if (!r) return;
-      var id = r.getAttribute("data-id");
-      if (r.hasAttribute("data-s")) location.href = "lecture.html?id=" + encodeURIComponent(id) + "&s=" + r.getAttribute("data-s");
-      else location.href = "lecture.html?id=" + encodeURIComponent(id);
+      location.href = "lecture.html?id=" + encodeURIComponent(r.getAttribute("data-id")) + "&s=" + r.getAttribute("data-s");
     });
-  }
-
-  function renderVideo(v) {
-    if (!v) {
-      return '<div class="about">这一期还没有关联视频。<br>把 B 站链接（或 BV 号）补进仓库根目录的 <code>videos.json</code>，这里就会出现播放器；同步会保留这个文件，不会被覆盖。</div>';
-    }
-    if (v.bvid) {
-      return '<div class="video-wrap"><iframe src="https://player.bilibili.com/player.html?bvid=' + encodeURIComponent(v.bvid) + '&page=1&high_quality=1&danmaku=0" scrolling="no" frameborder="0" allowfullscreen></iframe></div>' +
-        (v.title ? '<div class="video-title">' + esc(v.title) + "</div>" : "") +
-        (v.url ? '<a class="video-link" href="' + esc(v.url) + '" target="_blank" rel="noreferrer">在 B 站打开 ↗</a>' : "");
-    }
-    return '<div class="video-card"><div class="video-title">' + esc(v.title || "视频") + "</div>" +
-      (v.url ? '<a class="video-link" href="' + esc(v.url) + '" target="_blank" rel="noreferrer">打开视频 ↗</a>' : "") + "</div>";
   }
 
   /* ---------------- lecture ---------------- */
   if (document.getElementById("deck")) {
     var params = new URLSearchParams(location.search);
-    var id = params.get("id") || (DATA[0] && DATA[0].id);
+    var id = params.get("id") || (CAT[0] && CAT[0].id);
     var start = parseInt(params.get("s") || "1", 10);
-    var idx2 = DATA.findIndex(function (l) { return l.id === id; });
-    if (idx2 < 0) idx2 = 0;
-    var L = DATA[idx2];
+    var idx = CAT.findIndex(function (l) { return l.id === id; });
+    if (idx < 0) idx = 0;
+    var entry = CAT[idx] || {};
     var frame = document.getElementById("deck");
     var cnt = document.getElementById("cnt");
     var olPanel = document.getElementById("panel-ol");
     var notesPanel = document.getElementById("panel-notes");
+    var videoPanel = document.getElementById("panel-video");
     var aboutPanel = document.getElementById("panel-about");
     var ttl = document.getElementById("ttl");
 
-    document.title = L.id + " · " + L.title;
-    ttl.innerHTML = "<b>" + esc(L.id) + "</b>　" + esc(L.title) + (L.ep ? '<span>' + esc(L.ep) + "</span>" : "");
-    frame.src = "decks/" + encodeURIComponent(L.id) + ".html#" + (start || 1);
+    document.title = (entry.id || "") + " · " + (entry.title || "讲座");
+    ttl.innerHTML = "<b>" + esc(entry.id) + "</b>　" + esc(entry.title) + (entry.ep ? '<span>' + esc(entry.ep) + "</span>" : "");
+    frame.src = "decks/" + encodeURIComponent(entry.id) + ".html#" + (start || 1);
+    olPanel.innerHTML = '<div class="loading">正在载入目录…</div>';
 
-    olPanel.innerHTML = '<ul class="ol">' + L.slides.map(function (s) {
-      return '<li data-n="' + s.n + '"><span class="n">' + s.n + "</span><span>" + esc(s.t) + "</span></li>";
-    }).join("") + "</ul>";
+    document.getElementById("nextL").onclick = function () { if (idx < CAT.length - 1) location.href = "lecture.html?id=" + encodeURIComponent(CAT[idx + 1].id); };
+    document.getElementById("prevL").onclick = function () { if (idx > 0) location.href = "lecture.html?id=" + encodeURIComponent(CAT[idx - 1].id); };
+    document.getElementById("next").onclick = function () { send("ArrowRight"); };
+    document.getElementById("prev").onclick = function () { send("ArrowLeft"); };
 
-    if (L.notes.length) {
-      notesPanel.innerHTML = L.notes.map(function (nt, i) {
-        return '<div class="noteitem" data-i="' + i + '"><button>' + esc(nt.name) + '</button><div class="body">' + mdToHtml(nt.text) + "</div></div>";
-      }).join("");
-      notesPanel.addEventListener("click", function (e) {
-        var b = e.target.closest(".noteitem > button");
-        if (!b) return;
-        b.parentNode.classList.toggle("open");
-      });
-    } else {
-      notesPanel.innerHTML = '<div class="about">这一期还没有抓到笔记文件。</div>';
+    function renderVideo(v) {
+      if (!v) {
+        return '<div class="about">这一期还没有关联视频。<br>把 B 站链接（或 BV 号）补进仓库根目录的 <code>videos.json</code>，这里就会出现播放器；同步会保留这个文件，不会被覆盖。</div>';
+      }
+      if (v.bvid) {
+        return '<div class="video-wrap"><iframe src="https://player.bilibili.com/player.html?bvid=' + encodeURIComponent(v.bvid) + '&page=1&high_quality=1&danmaku=0" scrolling="no" frameborder="0" allowfullscreen></iframe></div>' +
+          (v.title ? '<div class="video-title">' + esc(v.title) + "</div>" : "") +
+          (v.url ? '<a class="video-link" href="' + esc(v.url) + '" target="_blank" rel="noreferrer">在 B 站打开 ↗</a>' : "");
+      }
+      return '<div class="video-card"><div class="video-title">' + esc(v.title || "视频") + "</div>" +
+        (v.url ? '<a class="video-link" href="' + esc(v.url) + '" target="_blank" rel="noreferrer">打开视频 ↗</a>' : "") + "</div>";
     }
 
-    aboutPanel.innerHTML = '<div class="about"><dl>' +
-      "<dt>期号</dt><dd>" + esc(L.ep || "—") + "</dd>" +
-      "<dt>标题</dt><dd>" + esc(L.title) + "</dd>" +
-      "<dt>幻灯片</dt><dd>" + L.slides.length + " 页</dd>" +
-      "<dt>笔记</dt><dd>" + L.notes.length + " 篇</dd>" +
-      "<dt>原始目录</dt><dd>" + esc(L.dir) + "</dd>" +
-      "<dt>说明</dt><dd>幻灯片按原始 HTML deck 渲染，图片经镜像按需加载（受网络限速，可能较慢）。笔记为本期调研材料原文。</dd>" +
-      "</dl>" +
-      (L.readme ? '<div style="margin-top:16px;padding-top:14px;border-top:1px solid #2b2c30">' + mdToHtml(L.readme) + "</div>" : "") +
-      "</div>";
+    var L = null;
+    var last = -1;
 
-    var videoPanel = document.getElementById("panel-video");
-    videoPanel.innerHTML = renderVideo(L.video);
-
-    document.querySelectorAll(".tabs button").forEach(function (b) {
-      b.addEventListener("click", function () {
-        document.querySelectorAll(".tabs button").forEach(function (x) { x.classList.toggle("on", x === b); });
-        var t = b.getAttribute("data-tab");
-        olPanel.hidden = t !== "ol";
-        notesPanel.hidden = t !== "notes";
-        videoPanel.hidden = t !== "video";
-        aboutPanel.hidden = t !== "about";
-      });
-    });
-
-    function highlight(n) {
-      olPanel.querySelectorAll("li").forEach(function (li) { li.classList.toggle("on", +li.getAttribute("data-n") === n); });
-      var act = olPanel.querySelector("li.on");
-      if (act && act.scrollIntoView) act.scrollIntoView({ block: "nearest" });
-      cnt.textContent = n + " / " + L.slides.length;
-      try { history.replaceState(null, "", "?id=" + encodeURIComponent(L.id) + "&s=" + n); } catch (e) {}
+    function send(key) {
+      try {
+        var doc = frame.contentDocument;
+        var ev = new KeyboardEvent("keydown", { key: key, bubbles: true, cancelable: true });
+        doc.dispatchEvent(ev);
+        doc.documentElement.dispatchEvent(ev);
+      } catch (e) {}
     }
 
     function activeIndex() {
@@ -251,27 +211,70 @@
       return 0;
     }
 
-    function send(key) {
-      try {
-        var doc = frame.contentDocument;
-        var ev = new KeyboardEvent("keydown", { key: key, bubbles: true, cancelable: true });
-        doc.dispatchEvent(ev);
-        doc.documentElement.dispatchEvent(ev);
-      } catch (e) {}
+    function highlight(n) {
+      if (!L) return;
+      olPanel.querySelectorAll("li").forEach(function (li) { li.classList.toggle("on", +li.getAttribute("data-n") === n); });
+      var act = olPanel.querySelector("li.on");
+      if (act && act.scrollIntoView) act.scrollIntoView({ block: "nearest" });
+      cnt.textContent = n + " / " + L.slides.length;
+      try { history.replaceState(null, "", "?id=" + encodeURIComponent(L.id) + "&s=" + n); } catch (e) {}
     }
 
-    olPanel.addEventListener("click", function (e) {
-      var li = e.target.closest("li");
-      if (!li) return;
-      var n = +li.getAttribute("data-n");
-      frame.src = "decks/" + encodeURIComponent(L.id) + ".html#" + n;
-      highlight(n);
-    });
+    function boot() {
+      L = window.LIP_LECTURE;
+      if (!L) { olPanel.innerHTML = '<div class="loading">数据加载失败</div>'; return; }
 
-    document.getElementById("next").onclick = function () { send("ArrowRight"); };
-    document.getElementById("prev").onclick = function () { send("ArrowLeft"); };
-    document.getElementById("nextL").onclick = function () { if (idx2 < DATA.length - 1) location.href = "lecture.html?id=" + encodeURIComponent(DATA[idx2 + 1].id); };
-    document.getElementById("prevL").onclick = function () { if (idx2 > 0) location.href = "lecture.html?id=" + encodeURIComponent(DATA[idx2 - 1].id); };
+      olPanel.innerHTML = '<ul class="ol">' + L.slides.map(function (s) {
+        return '<li data-n="' + s.n + '"><span class="n">' + s.n + "</span><span>" + esc(s.t) + "</span></li>";
+      }).join("") + "</ul>";
+
+      if (L.notes && L.notes.length) {
+        notesPanel.innerHTML = L.notes.map(function (nt, i) {
+          return '<div class="noteitem" data-i="' + i + '"><button>' + esc(nt.name) + '</button><div class="body">' + mdToHtml(nt.text) + "</div></div>";
+        }).join("");
+      } else {
+        notesPanel.innerHTML = '<div class="about">这一期还没有抓到笔记文件。</div>';
+      }
+
+      videoPanel.innerHTML = renderVideo(L.video);
+
+      aboutPanel.innerHTML = '<div class="about"><dl>' +
+        "<dt>期号</dt><dd>" + esc(L.ep || "—") + "</dd>" +
+        "<dt>标题</dt><dd>" + esc(L.title) + "</dd>" +
+        "<dt>幻灯片</dt><dd>" + L.slides.length + " 页</dd>" +
+        "<dt>笔记</dt><dd>" + L.notes.length + " 篇</dd>" +
+        "<dt>原始目录</dt><dd>" + esc(L.dir) + "</dd>" +
+        "<dt>说明</dt><dd>幻灯片按原始 HTML deck 渲染，图片经镜像按需加载（受网络限速，可能较慢）。笔记为本期调研材料原文。</dd>" +
+        "</dl>" +
+        (L.readme ? '<div style="margin-top:16px;padding-top:14px;border-top:1px solid #2b2c30">' + mdToHtml(L.readme) + "</div>" : "") +
+        "</div>";
+
+      olPanel.addEventListener("click", function (e) {
+        var li = e.target.closest("li");
+        if (!li) return;
+        var n = +li.getAttribute("data-n");
+        frame.src = "decks/" + encodeURIComponent(L.id) + ".html#" + n;
+        highlight(n);
+      });
+      notesPanel.addEventListener("click", function (e) {
+        var b = e.target.closest(".noteitem > button");
+        if (!b) return;
+        b.parentNode.classList.toggle("open");
+      });
+
+      highlight(Math.min(Math.max(start || 1, 1), L.slides.length));
+    }
+
+    document.querySelectorAll(".tabs button").forEach(function (b) {
+      b.addEventListener("click", function () {
+        document.querySelectorAll(".tabs button").forEach(function (x) { x.classList.toggle("on", x === b); });
+        var t = b.getAttribute("data-tab");
+        olPanel.hidden = t !== "ol";
+        notesPanel.hidden = t !== "notes";
+        videoPanel.hidden = t !== "video";
+        aboutPanel.hidden = t !== "about";
+      });
+    });
 
     window.addEventListener("keydown", function (e) {
       if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
@@ -279,12 +282,15 @@
       else if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); send("ArrowLeft"); }
     });
 
-    var last = -1;
     setInterval(function () {
       var n = activeIndex();
       if (n && n !== last) { last = n; highlight(n); }
     }, 400);
 
-    highlight(Math.min(Math.max(start || 1, 1), L.slides.length));
+    var s = document.createElement("script");
+    s.src = "data/lecture-" + encodeURIComponent(entry.id) + ".js";
+    s.onload = boot;
+    s.onerror = function () { olPanel.innerHTML = '<div class="loading">这一期的数据加载失败，刷新重试。</div>'; };
+    document.body.appendChild(s);
   }
 })();
