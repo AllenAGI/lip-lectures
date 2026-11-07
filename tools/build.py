@@ -183,7 +183,7 @@ def main():
     with open(os.path.join(DATA_DIR, "search.js"), "w", encoding="utf8") as f:
         f.write("window.LIP_SEARCH = " + json.dumps(search, ensure_ascii=False, separators=(",", ":")) + ";\n")
 
-    keep_js = {l["id"] + ".js" for l in lectures}
+    keep_js = {"lecture-%s.js" % l["id"] for l in lectures}
     for name in os.listdir(DATA_DIR):
         if name.startswith("lecture-") and name not in keep_js:
             os.remove(os.path.join(DATA_DIR, name))
